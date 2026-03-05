@@ -21,6 +21,7 @@ const yujiSyuku = Yuji_Syuku({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://somarou.vercel.app"),
   title: "走馬灯 - SOMATO",
   description: "写真が走馬灯のように駆け巡る動画を生成するWebアプリ",
   openGraph: {
