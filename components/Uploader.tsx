@@ -91,7 +91,6 @@ export default function Uploader({ onFilesSelected, disabled }: Props) {
           ref={inputRef}
           type="file"
           multiple
-          accept="image/*"
           onChange={handleFileInput}
           className="hidden"
           disabled={disabled}

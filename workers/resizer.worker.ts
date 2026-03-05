@@ -1,5 +1,6 @@
-const TARGET_W = 1080;
-const TARGET_H = 1920;
+// リサイズは半分のサイズで行い、描画時にCanvasがスケールアップする
+const TARGET_W = 540;
+const TARGET_H = 960;
 
 self.onmessage = async (e: MessageEvent<{ files: File[] }>) => {
   const { files } = e.data;
@@ -9,18 +10,16 @@ self.onmessage = async (e: MessageEvent<{ files: File[] }>) => {
       const file = files[i];
       const originalBitmap = await createImageBitmap(file);
 
-      // cover計算: アスペクト比を保ちつつ1080x1920を埋める
+      // cover計算: アスペクト比を保ちつつターゲットを埋める
       const srcAspect = originalBitmap.width / originalBitmap.height;
       const dstAspect = TARGET_W / TARGET_H;
 
       let sx = 0, sy = 0, sw = originalBitmap.width, sh = originalBitmap.height;
 
       if (srcAspect > dstAspect) {
-        // 横長 → 左右をトリム
         sw = originalBitmap.height * dstAspect;
         sx = (originalBitmap.width - sw) / 2;
       } else {
-        // 縦長 → 上下をトリム
         sh = originalBitmap.width / dstAspect;
         sy = (originalBitmap.height - sh) / 2;
       }
@@ -28,7 +27,7 @@ self.onmessage = async (e: MessageEvent<{ files: File[] }>) => {
       const resized = await createImageBitmap(originalBitmap, sx, sy, sw, sh, {
         resizeWidth: TARGET_W,
         resizeHeight: TARGET_H,
-        resizeQuality: 'medium',
+        resizeQuality: 'low',
       });
 
       originalBitmap.close();
