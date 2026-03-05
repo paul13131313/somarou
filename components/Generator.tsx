@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { generateDisplayTimes, type EasingPattern } from '@/lib/easing';
-import { loadBGM, loadBGMFromFile } from '@/lib/audioLoader';
 
 type Props = {
   bitmaps: ImageBitmap[];
@@ -30,6 +29,14 @@ export default function Generator({
     if (started.current) return;
     started.current = true;
 
+    const {
+      Output,
+      Mp4OutputFormat,
+      BufferTarget,
+      CanvasSource,
+      AudioBufferSource,
+    } = await import('mediabunny');
+
     const displayTimes = generateDisplayTimes(bitmaps.length, duration, pattern);
 
     const canvas = document.createElement('canvas');
@@ -37,81 +44,80 @@ export default function Generator({
     canvas.height = 1920;
     const ctx = canvas.getContext('2d')!;
 
-    // オーディオセットアップ
+    const FPS = 30;
+    const frameDuration = 1 / FPS;
+    const totalFrames = Math.ceil(duration * FPS);
+
+    // MP4出力セットアップ
+    const output = new Output({
+      format: new Mp4OutputFormat(),
+      target: new BufferTarget(),
+    });
+
+    const videoSource = new CanvasSource(canvas, {
+      codec: 'avc',
+      bitrate: 8e6,
+    });
+
+    output.addVideoTrack(videoSource, { frameRate: FPS });
+
+    // BGM読み込み
+    let audioBuffer: AudioBuffer | null = null;
     const audioCtx = new AudioContext();
-    const dest = audioCtx.createMediaStreamDestination();
-    let bgmSource: AudioBufferSourceNode | null = null;
 
     try {
+      let arrayBuffer: ArrayBuffer | null = null;
       if (bgmFile) {
-        bgmSource = await loadBGMFromFile(audioCtx, bgmFile);
+        arrayBuffer = await bgmFile.arrayBuffer();
       } else if (bgmUrl) {
-        bgmSource = await loadBGM(audioCtx, bgmUrl);
+        const res = await fetch(bgmUrl);
+        arrayBuffer = await res.arrayBuffer();
+      }
+      if (arrayBuffer) {
+        audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
       }
     } catch (err) {
       console.error('BGM読み込み失敗:', err);
     }
 
-    if (bgmSource) {
-      bgmSource.connect(dest);
-      bgmSource.connect(audioCtx.destination);
+    let audioSource: InstanceType<typeof AudioBufferSource> | null = null;
+    if (audioBuffer) {
+      audioSource = new AudioBufferSource({
+        codec: 'aac',
+        bitrate: 128e3,
+      });
+      output.addAudioTrack(audioSource);
     }
 
-    // MediaRecorder
-    const videoStream = canvas.captureStream(30);
-    const tracks = [
-      ...videoStream.getVideoTracks(),
-      ...dest.stream.getAudioTracks(),
-    ];
-    const stream = new MediaStream(tracks);
-
-    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-      ? 'video/webm;codecs=vp9'
-      : 'video/webm';
-
-    const recorder = new MediaRecorder(stream, { mimeType });
-    const chunks: Blob[] = [];
-
-    recorder.ondataavailable = (e) => {
-      if (e.data.size > 0) chunks.push(e.data);
-    };
-
-    recorder.onstop = () => {
-      if (bgmSource) {
-        try { bgmSource.stop(); } catch {}
-      }
-      audioCtx.close();
-
-      const blob = new Blob(chunks, { type: 'video/webm' });
-      const url = URL.createObjectURL(blob);
-      onComplete(url);
-    };
+    await audioCtx.close();
 
     // 録画開始
-    recorder.start(100);
-    if (bgmSource) {
-      bgmSource.start(0);
+    await output.start();
+
+    // BGMのAudioBufferを追加
+    if (audioSource && audioBuffer) {
+      await audioSource.add(audioBuffer);
     }
     setStatus('録画中...');
 
-    // 描画ループ
+    // フレームごとに描画→追加
     let photoIndex = 0;
-    let lastSwitch = performance.now();
+    let elapsedMs = 0;
+    let currentDisplayTime = displayTimes[0];
+    let displayTimeIndex = 0;
     let flashAlpha = 0;
-    let recording = true;
-    let totalSwitches = 0;
-    const totalPhotos = displayTimes.length;
 
-    const draw = (now: number) => {
-      if (!recording) return;
+    for (let frame = 0; frame < totalFrames; frame++) {
+      const frameMs = frame * (1000 / FPS);
 
-      const elapsed = now - lastSwitch;
-      if (elapsed >= displayTimes[photoIndex % displayTimes.length]) {
+      // 写真切り替え判定
+      const timeSinceSwitch = frameMs - elapsedMs;
+      if (timeSinceSwitch >= currentDisplayTime) {
         photoIndex = (photoIndex + 1) % bitmaps.length;
-        lastSwitch = now;
+        elapsedMs = frameMs;
+        displayTimeIndex = (displayTimeIndex + 1) % displayTimes.length;
+        currentDisplayTime = displayTimes[displayTimeIndex];
         flashAlpha = 0.6;
-        totalSwitches++;
-        onProgress(Math.min(totalSwitches, totalPhotos), totalPhotos);
       }
 
       // 写真描画
@@ -131,17 +137,27 @@ export default function Generator({
       ctx.fillStyle = vignette;
       ctx.fillRect(0, 0, 1080, 1920);
 
-      requestAnimationFrame(draw);
-    };
+      // フレーム追加
+      const timestamp = frame * frameDuration;
+      videoSource.add(timestamp, frameDuration);
 
-    requestAnimationFrame(draw);
+      // 進捗報告（30フレームごと）
+      if (frame % FPS === 0) {
+        onProgress(frame, totalFrames);
+        // UIスレッドをブロックしないよう一瞬待つ
+        await new Promise((r) => setTimeout(r, 0));
+      }
+    }
 
-    // 指定秒数後に停止
-    setTimeout(() => {
-      recording = false;
-      recorder.stop();
-      setStatus('動画を生成中...');
-    }, duration * 1000);
+    onProgress(totalFrames, totalFrames);
+    setStatus('動画を生成中...');
+
+    await output.finalize();
+
+    const buffer = (output.target as InstanceType<typeof BufferTarget>).buffer!;
+    const blob = new Blob([buffer], { type: 'video/mp4' });
+    const url = URL.createObjectURL(blob);
+    onComplete(url);
   }, [bitmaps, duration, pattern, bgmUrl, bgmFile, onComplete, onProgress]);
 
   useEffect(() => {

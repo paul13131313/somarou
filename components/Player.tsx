@@ -13,7 +13,7 @@ export default function Player({ videoUrl, onReset }: Props) {
   const handleDownload = () => {
     const a = document.createElement('a');
     a.href = videoUrl;
-    a.download = `somato-${Date.now()}.webm`;
+    a.download = `somato-${Date.now()}.mp4`;
     a.click();
   };
 
