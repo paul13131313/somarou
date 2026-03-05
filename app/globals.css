@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+:root {
+  --background: #000000;
+  --foreground: #FFFFFF;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-dm-sans);
+  --font-display: var(--font-noto-sans-jp);
+}
+
+body {
+  background: #000000;
+  color: #FFFFFF;
+  font-family: "DM Sans", sans-serif;
+}
+
+::selection {
+  background: rgba(255, 255, 255, 0.2);
+  color: #FFFFFF;
+}
