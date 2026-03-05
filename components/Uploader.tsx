@@ -77,8 +77,8 @@ export default function Uploader({ onFilesSelected, disabled }: Props) {
 
   return (
     <div className="w-full max-w-lg mx-auto">
-      <div
-        className={`border border-dashed p-16 text-center transition-all cursor-pointer ${
+      <label
+        className={`block border border-dashed p-16 text-center transition-all cursor-pointer ${
           dragOver
             ? 'border-white/60 bg-white/5'
             : 'border-white/15 hover:border-white/30'
@@ -86,7 +86,6 @@ export default function Uploader({ onFilesSelected, disabled }: Props) {
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={() => setDragOver(false)}
-        onClick={() => inputRef.current?.click()}
       >
         <input
           ref={inputRef}
@@ -101,9 +100,9 @@ export default function Uploader({ onFilesSelected, disabled }: Props) {
           Drop photos here
         </p>
         <p className="text-white/30 text-xs tracking-wider">
-          or click to select (max {MAX_PHOTOS})
+          or tap to select (max {MAX_PHOTOS})
         </p>
-      </div>
+      </label>
 
       {supportsDirectoryPicker && (
         <button
