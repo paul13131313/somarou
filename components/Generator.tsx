@@ -94,9 +94,24 @@ export default function Generator({
     // 録画開始
     await output.start();
 
-    // BGMのAudioBufferを追加
+    // BGMのAudioBufferを動画の長さにトリミングして追加
     if (audioSource && audioBuffer) {
-      await audioSource.add(audioBuffer);
+      const trimmedLength = Math.min(
+        audioBuffer.length,
+        Math.ceil(duration * audioBuffer.sampleRate)
+      );
+      const trimmed = new AudioBuffer({
+        numberOfChannels: audioBuffer.numberOfChannels,
+        length: trimmedLength,
+        sampleRate: audioBuffer.sampleRate,
+      });
+      for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
+        trimmed.copyToChannel(
+          audioBuffer.getChannelData(ch).slice(0, trimmedLength),
+          ch
+        );
+      }
+      await audioSource.add(trimmed);
     }
     setStatus('録画中...');
 
@@ -105,8 +120,6 @@ export default function Generator({
     let elapsedMs = 0;
     let currentDisplayTime = displayTimes[0];
     let displayTimeIndex = 0;
-    let flashAlpha = 0;
-
     for (let frame = 0; frame < totalFrames; frame++) {
       const frameMs = frame * (1000 / FPS);
 
@@ -117,18 +130,10 @@ export default function Generator({
         elapsedMs = frameMs;
         displayTimeIndex = (displayTimeIndex + 1) % displayTimes.length;
         currentDisplayTime = displayTimes[displayTimeIndex];
-        flashAlpha = 0.6;
       }
 
       // 写真描画
       ctx.drawImage(bitmaps[photoIndex], 0, 0, 1080, 1920);
-
-      // フラッシュエフェクト
-      if (flashAlpha > 0) {
-        ctx.fillStyle = `rgba(255,255,255,${flashAlpha})`;
-        ctx.fillRect(0, 0, 1080, 1920);
-        flashAlpha -= 0.15;
-      }
 
       // ビネット
       const vignette = ctx.createRadialGradient(540, 960, 400, 540, 960, 1000);
@@ -137,15 +142,13 @@ export default function Generator({
       ctx.fillStyle = vignette;
       ctx.fillRect(0, 0, 1080, 1920);
 
-      // フレーム追加
+      // フレーム追加（awaitでエンコーダのバックプレッシャーを尊重）
       const timestamp = frame * frameDuration;
-      videoSource.add(timestamp, frameDuration);
+      await videoSource.add(timestamp, frameDuration);
 
       // 進捗報告（30フレームごと）
       if (frame % FPS === 0) {
         onProgress(frame, totalFrames);
-        // UIスレッドをブロックしないよう一瞬待つ
-        await new Promise((r) => setTimeout(r, 0));
       }
     }
 
